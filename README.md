@@ -47,3 +47,11 @@ CLOUDINARY_API_SECRET=your_api_secret
 
 NODE_ENV=development
 ```
+
+
+
+```
+npm run build
+
+npm run
+```
