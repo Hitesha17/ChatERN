@@ -1,8 +1,14 @@
 import { config } from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 import { connectDB } from "../lib/db.js";
 import User from "../models/user.model.js";
 
-config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load .env relative to the backend root directory regardless of current working directory
+config({ path: path.resolve(__dirname, "../../.env") });
 
 const seedUsers = [
   // Female Users
@@ -106,8 +112,10 @@ const seedDatabase = async () => {
 
     await User.insertMany(seedUsers);
     console.log("Database seeded successfully");
+    process.exit(0);
   } catch (error) {
     console.error("Error seeding database:", error);
+    process.exit(1);
   }
 };
 

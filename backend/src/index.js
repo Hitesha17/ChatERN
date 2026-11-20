@@ -67,7 +67,7 @@
 
 // dotenv.config(); // Load environment variables from .env file
 // const app = express(); 
-  
+
 // app.use(express.json()); // Middleware to parse JSON request bodies
 // app.use(cookieParser());
 // app.use(cors({
@@ -95,6 +95,7 @@
 //   connectDB();
 // });
 
+import "./lib/node26-compat.js";
 import express from "express";
 import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
@@ -117,7 +118,7 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(
   cors({
-      origin: "https://chatern.aditechsystems.com",
+    origin: "http://localhost:5173",
     credentials: true,
   })
 );
