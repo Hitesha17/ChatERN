@@ -3,10 +3,19 @@ set -eu
 
 if [ -n "${BACKEND_URL:-}" ]; then
   UPSTREAM="${BACKEND_URL%/}"
+  RESOLVERS=$(awk '/^nameserver[ \t]+[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/ {print $2}' /etc/resolv.conf 2>/dev/null | tr '\n' ' ' | xargs || true)
+  if [ -z "${RESOLVERS}" ]; then
+    RESOLVERS="127.0.0.11"
+  fi
+
   cat > /etc/nginx/conf.d/proxy.inc <<EOF
+    resolver ${RESOLVERS} valid=10s ipv6=off;
+
     location /api/ {
-        proxy_pass ${UPSTREAM};
+        set \$backend_upstream "${UPSTREAM}";
+        proxy_pass \$backend_upstream;
         proxy_http_version 1.1;
+        proxy_ssl_server_name on;
         proxy_set_header Host \$http_host;
         proxy_set_header X-Forwarded-Host \$http_host;
         proxy_set_header X-Real-IP \$remote_addr;
@@ -15,8 +24,10 @@ if [ -n "${BACKEND_URL:-}" ]; then
     }
 
     location /socket.io/ {
-        proxy_pass ${UPSTREAM};
+        set \$backend_upstream "${UPSTREAM}";
+        proxy_pass \$backend_upstream;
         proxy_http_version 1.1;
+        proxy_ssl_server_name on;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host \$http_host;
