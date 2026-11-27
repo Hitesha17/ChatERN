@@ -16,6 +16,8 @@ RUN npm run build
 FROM nginx:alpine
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY docker-entrypoint.d/25-backend-proxy.sh /docker-entrypoint.d/25-backend-proxy.sh
+RUN chmod +x /docker-entrypoint.d/25-backend-proxy.sh && touch /etc/nginx/conf.d/proxy.inc
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 EXPOSE 80

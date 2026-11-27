@@ -22,6 +22,10 @@ export const useAuthStore = create((set, get) => ({
   checkAuth: async () => {
     try {
       const res = await axiosInstance.get("/auth/check");
+      if (!res.data?._id) {
+        set({ authUser: null });
+        return;
+      }
       set({ authUser: res.data });
       get().connectSocket();
     } catch {
@@ -35,6 +39,9 @@ export const useAuthStore = create((set, get) => ({
     set({ isSigningUp: true });
     try {
       const res = await axiosInstance.post("/auth/signup", data);
+      if (!res.data?._id) {
+        throw new Error("Invalid server response");
+      }
       set({ authUser: res.data });
       toast.success("Account created successfully");
       get().connectSocket();
@@ -49,6 +56,9 @@ export const useAuthStore = create((set, get) => ({
     set({ isLoggingIn: true });
     try {
       const res = await axiosInstance.post("/auth/login", data);
+      if (!res.data?._id) {
+        throw new Error("Invalid server response");
+      }
       set({ authUser: res.data });
       toast.success("Logged in successfully");
       get().connectSocket();
@@ -85,7 +95,7 @@ export const useAuthStore = create((set, get) => ({
 
   connectSocket: () => {
     const { authUser, socket: existingSocket } = get();
-    if (!authUser || existingSocket?.connected) return;
+    if (!authUser?._id || existingSocket?.connected) return;
 
     if (existingSocket) {
       existingSocket.disconnect();

@@ -39,6 +39,8 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    environment:
+      BACKEND_URL: http://backend:5001
     ports:
       - "${APP_PORT:-8080}:80"
 
