@@ -34,10 +34,57 @@ export const getAllowedOrigins = () => {
   }
 
   if (process.env.NODE_ENV !== "production") {
-    return ["https://chatern.aditechsystems.com/"];
+    return ["http://localhost:5173", "http://127.0.0.1:5173"];
   }
 
   return [];
+};
+
+export const isOriginAllowedForRequest = (req, allowedOrigins = getAllowedOrigins()) => {
+  const origin = req?.headers?.origin;
+  if (!origin) return true;
+
+  const normalized = normalizeOrigin(origin);
+  if (allowedOrigins.includes("*")) return true;
+
+  if (allowedOrigins.length > 0) {
+    if (allowedOrigins.includes(normalized)) return true;
+
+    // In development, allow any localhost/127.0.0.1 port (e.g., Vite fallback port 5174)
+    if (process.env.NODE_ENV !== "production") {
+      try {
+        const { hostname } = new URL(normalized);
+        if (hostname === "localhost" || hostname === "127.0.0.1") {
+          return true;
+        }
+      } catch {
+        return false;
+      }
+    }
+
+    return false;
+  }
+
+  // When CORS_ORIGIN is unset in production (single-container / reverse-proxied deploy):
+  // 1) Trust browser Fetch Metadata when explicitly same-origin (handles proxies rewriting Host)
+  if (req.headers["sec-fetch-site"] === "same-origin") {
+    return true;
+  }
+
+  // 2) Otherwise check that Origin host matches Host / X-Forwarded-Host
+  try {
+    const originHost = new URL(normalized).host;
+    const requestHost = (
+      req.headers["x-forwarded-host"] ||
+      req.headers.host ||
+      ""
+    )
+      .split(",")[0]
+      .trim();
+    return Boolean(requestHost) && originHost === requestHost;
+  } catch {
+    return false;
+  }
 };
 
 export const isCloudinaryConfigured = () =>

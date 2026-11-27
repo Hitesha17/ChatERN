@@ -2,7 +2,7 @@ import { Server } from "socket.io";
 import http from "http";
 import express from "express";
 import jwt from "jsonwebtoken";
-import { getAllowedOrigins, normalizeOrigin } from "./env.js";
+import { getAllowedOrigins, isOriginAllowedForRequest } from "./env.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -26,51 +26,20 @@ const parseCookies = (cookieHeader = "") => {
   return cookies;
 };
 
-const isRequestOriginAllowed = (req) => {
-  const origin = req.headers.origin;
-  if (!origin) return true;
-
-  const normalized = normalizeOrigin(origin);
-  if (allowedOrigins.includes("*")) return true;
-  if (allowedOrigins.length > 0) {
-    return allowedOrigins.includes(normalized);
-  }
-
-  // When CORS_ORIGIN is unset in production (single-container deployment),
-  // only allow same-host origins.
-  try {
-    const originHost = new URL(normalized).host;
-    const requestHost = (
-      req.headers["x-forwarded-host"] ||
-      req.headers.host ||
-      ""
-    )
-      .split(",")[0]
-      .trim();
-    return Boolean(requestHost) && originHost === requestHost;
-  } catch {
-    return false;
-  }
-};
-
 const io = new Server(server, {
   cors: {
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
-      const normalized = normalizeOrigin(origin);
-      if (allowedOrigins.includes("*")) return callback(null, true);
-      if (allowedOrigins.length > 0) {
-        return allowedOrigins.includes(normalized)
-          ? callback(null, true)
-          : callback(new Error("Not allowed by CORS"));
-      }
-      // Enforced per-request by allowRequest when CORS_ORIGIN is unset
+      // Actual host/origin enforcement runs in allowRequest with full req headers
       return callback(null, true);
     },
     credentials: true,
   },
   allowRequest: (req, callback) => {
-    if (!isRequestOriginAllowed(req)) {
+    if (!isOriginAllowedForRequest(req, allowedOrigins)) {
+      console.warn(
+        `[socket] Blocked connection from origin="${req.headers.origin}" host="${req.headers.host}" forwardedHost="${req.headers["x-forwarded-host"] || ""}"`
+      );
       return callback("Origin not allowed", false);
     }
     return callback(null, true);
@@ -82,6 +51,7 @@ io.use((socket, next) => {
   const token = cookies.jwt || socket.handshake.auth?.token;
 
   if (!token) {
+    console.warn("[socket] Rejected unauthenticated connection (no jwt cookie)");
     return next(new Error("Unauthorized - No token provided"));
   }
 
@@ -92,7 +62,8 @@ io.use((socket, next) => {
     }
     socket.userId = String(decoded.userId);
     return next();
-  } catch {
+  } catch (error) {
+    console.warn("[socket] Rejected connection (invalid jwt):", error.message);
     return next(new Error("Unauthorized - Invalid token"));
   }
 });

@@ -7,7 +7,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import mongoose from "mongoose";
 
-import { getAllowedOrigins, normalizeOrigin, validateEnv } from "./lib/env.js";
+import { getAllowedOrigins, isOriginAllowedForRequest, validateEnv } from "./lib/env.js";
 import { connectDB, disconnectDB } from "./lib/db.js";
 import { app, io, server } from "./lib/socket.js";
 import { createRateLimiter, securityHeaders } from "./middleware/security.middleware.js";
@@ -35,33 +35,8 @@ app.use(
       return callback(null, { origin: false, credentials: true });
     }
 
-    const normalized = normalizeOrigin(origin);
-    if (allowedOrigins.includes("*")) {
-      return callback(null, { origin: true, credentials: true });
-    }
-
-    if (allowedOrigins.length > 0) {
-      const allowed = allowedOrigins.includes(normalized);
-      return callback(null, { origin: allowed, credentials: true });
-    }
-
-    // Single-container fallback when CORS_ORIGIN is not configured: allow same-host origin
-    try {
-      const originHost = new URL(normalized).host;
-      const requestHost = (
-        req.headers["x-forwarded-host"] ||
-        req.headers.host ||
-        ""
-      )
-        .split(",")[0]
-        .trim();
-      return callback(null, {
-        origin: Boolean(requestHost) && originHost === requestHost,
-        credentials: true,
-      });
-    } catch {
-      return callback(null, { origin: false, credentials: true });
-    }
+    const allowed = isOriginAllowedForRequest(req, allowedOrigins);
+    return callback(null, { origin: allowed, credentials: true });
   })
 );
 
