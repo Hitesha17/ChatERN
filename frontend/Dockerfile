@@ -20,7 +20,7 @@ COPY docker-entrypoint.d/25-backend-proxy.sh /docker-entrypoint.d/25-backend-pro
 RUN chmod +x /docker-entrypoint.d/25-backend-proxy.sh && touch /etc/nginx/conf.d/proxy.inc
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-EXPOSE 80
+EXPOSE 80 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD wget -q -O /dev/null http://127.0.0.1/healthz || exit 1
