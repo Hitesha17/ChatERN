@@ -83,9 +83,10 @@ if (process.env.NODE_ENV === "production") {
       res.sendFile(path.join(frontendDistPath, "index.html"));
     });
   } else {
-    console.warn(
-      `[config] Frontend dist directory not found at ${frontendDistPath}; running in API-only mode.`
-    );
+    console.log("[config] Running in API-only mode (frontend served separately).");
+    app.get("/", (req, res) => {
+      res.status(200).json({ status: "ok", service: "chatern-api" });
+    });
   }
 }
 
