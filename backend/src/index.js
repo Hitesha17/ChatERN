@@ -1,140 +1,177 @@
-// import dotenv from "dotenv";
-// dotenv.config(); // Load env vars early
-
-// import express from "express";
-// import cookieParser from "cookie-parser";
-// import cors from "cors";
-// import path from "path";
-// import chalk from "chalk"; // For styled console logs
-
-// import { connectDB } from "./lib/db.js";
-// import authRoutes from "./routes/auth.route.js";
-// import messageRoutes from "./routes/message.route.js";
-// import { app, server } from "./lib/socket.js";
-
-// const PORT = process.env.PORT || 5001;
-// const __dirname = path.resolve();
-
-// // Middleware
-// app.use(express.json());
-// app.use(cookieParser());
-// app.use(
-//   cors({
-//     origin: "http://localhost:5173",
-//     credentials: true,
-//   })
-// );
-
-// // API Routes
-// app.use("/api/auth", authRoutes);
-// app.use("/api/messages", messageRoutes);
-
-// // Serve static files in production
-// if (process.env.NODE_ENV === "production") {
-//   app.use(express.static(path.join(__dirname, "../frontend/dist")));
-
-//   app.get("*", (req, res) => {
-//     res.sendFile(path.join(__dirname, "../frontend", "dist", "index.html"));
-//   });
-// }
-
-// // Start server *after* DB connects
-// const startServer = async () => {
-//   try {
-//     await connectDB();
-
-//     server.listen(PORT, () => {
-//       console.log(chalk.green(`✅ Server running on port ${PORT}`));
-//     });
-//   } catch (error) {
-//     console.error(chalk.red("❌ Failed to start server:"), error);
-//     process.exit(1);
-//   }
-// };
-
-// startServer();
-
-
-
-// import express from 'express';
-// import authRoutes from './routes/auth.route.js';
-// import messageRoutes from './routes/message.route.js';
-// import dotenv from 'dotenv'; // Import dotenv to load environment variables
-// import { connectDB } from './lib/db.js';
-// import { connect } from 'mongoose';
-// import cookieParser from "cookie-parser";
-// import cors from "cors";
-
-// dotenv.config(); // Load environment variables from .env file
-// const app = express(); 
-
-// app.use(express.json()); // Middleware to parse JSON request bodies
-// app.use(cookieParser());
-// app.use(cors({
-//   origin:"http://localhost:5173", // Allow requests from this origin
-//   credentials:true
-// })); // Middleware to parse cookies
-
-
-
-// const PORT = process.env.PORT || 3000 ; // Set the port to 3000 or the value from the environment variable
-
-
-
-// app.use("/api/auth",authRoutes) 
-// app.use("/api/message",messageRoutes)
-
-
-
-
-
-
-
-// app.listen(PORT, () => {
-//   console.log('Server is running on PORT:', +PORT);
-//   connectDB();
-// });
-
 import "./lib/node26-compat.js";
 import express from "express";
-import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import cors from "cors";
-
+import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
+import mongoose from "mongoose";
 
-import { connectDB } from "./lib/db.js";
-
+import { getAllowedOrigins, normalizeOrigin, validateEnv } from "./lib/env.js";
+import { connectDB, disconnectDB } from "./lib/db.js";
+import { app, io, server } from "./lib/socket.js";
+import { createRateLimiter, securityHeaders } from "./middleware/security.middleware.js";
 import authRoutes from "./routes/auth.route.js";
 import messageRoutes from "./routes/message.route.js";
-import { app, server } from "./lib/socket.js";
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-const PORT = process.env.PORT;
-const __dirname = path.resolve();
+const PORT = Number(process.env.PORT) || 5001;
+const allowedOrigins = getAllowedOrigins();
 
-app.use(express.json());
+app.disable("x-powered-by");
+app.set("trust proxy", 1);
+
+app.use(securityHeaders);
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
+
 app.use(
-  cors({
-    origin: "https://chatern.aditechsystems.com/",
-    credentials: true,
+  cors((req, callback) => {
+    const origin = req.headers.origin;
+    if (!origin) {
+      return callback(null, { origin: false, credentials: true });
+    }
+
+    const normalized = normalizeOrigin(origin);
+    if (allowedOrigins.includes("*")) {
+      return callback(null, { origin: true, credentials: true });
+    }
+
+    if (allowedOrigins.length > 0) {
+      const allowed = allowedOrigins.includes(normalized);
+      return callback(null, { origin: allowed, credentials: true });
+    }
+
+    // Single-container fallback when CORS_ORIGIN is not configured: allow same-host origin
+    try {
+      const originHost = new URL(normalized).host;
+      const requestHost = (
+        req.headers["x-forwarded-host"] ||
+        req.headers.host ||
+        ""
+      )
+        .split(",")[0]
+        .trim();
+      return callback(null, {
+        origin: Boolean(requestHost) && originHost === requestHost,
+        credentials: true,
+      });
+    } catch {
+      return callback(null, { origin: false, credentials: true });
+    }
   })
 );
 
+const apiRateLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 300,
+  message: "Too many requests, please slow down",
+});
+
+app.get("/api/health", (req, res) => {
+  const dbReady = mongoose.connection.readyState === 1;
+  const statusCode = dbReady ? 200 : 503;
+
+  res.status(statusCode).json({
+    status: dbReady ? "ok" : "degraded",
+    uptime: Math.round(process.uptime()),
+    database: dbReady ? "connected" : "disconnected",
+  });
+});
+
+app.use("/api", apiRateLimiter);
 app.use("/api/auth", authRoutes);
 app.use("/api/messages", messageRoutes);
 
-if (process.env.NODE_ENV === "production") {
-  app.use(express.static(path.join(__dirname, "../frontend/dist")));
+app.use("/api/*", (req, res) => {
+  res.status(404).json({ message: "API route not found" });
+});
 
-  app.get("*", (req, res) => {
-    res.sendFile(path.join(__dirname, "../frontend", "dist", "index.html"));
-  });
+if (process.env.NODE_ENV === "production") {
+  const frontendDistPath = path.resolve(__dirname, "../../frontend/dist");
+  if (fs.existsSync(frontendDistPath)) {
+    app.use(
+      express.static(frontendDistPath, {
+        maxAge: "1y",
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith(".html")) {
+            res.setHeader("Cache-Control", "no-cache");
+          }
+        },
+      })
+    );
+
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(frontendDistPath, "index.html"));
+    });
+  } else {
+    console.warn(
+      `[config] Frontend dist directory not found at ${frontendDistPath}; running in API-only mode.`
+    );
+  }
 }
 
-server.listen(PORT, () => {
-  console.log("server is running on PORT:" + PORT);
-  connectDB();
+// Central error handler (catches oversized payloads, malformed JSON, etc.)
+app.use((err, req, res, next) => {
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  if (err?.type === "entity.too.large") {
+    return res.status(413).json({ message: "Payload too large (max 10MB)" });
+  }
+
+  if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
+    return res.status(400).json({ message: "Invalid JSON payload" });
+  }
+
+  console.error("Unhandled server error:", err?.message || err);
+  return res.status(500).json({ message: "Internal server error" });
 });
+
+const startServer = async () => {
+  try {
+    validateEnv();
+    await connectDB();
+
+    server.listen(PORT, () => {
+      console.log(`Server running on PORT: ${PORT} (${process.env.NODE_ENV || "development"})`);
+    });
+  } catch (error) {
+    console.error("Failed to start server:", error.message);
+    process.exit(1);
+  }
+};
+
+let isShuttingDown = false;
+const shutdown = async (signal) => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`${signal} received, shutting down gracefully...`);
+
+  const forceExitTimer = setTimeout(() => {
+    console.error("Forced shutdown after timeout");
+    process.exit(1);
+  }, 10000);
+  forceExitTimer.unref();
+
+  try {
+    await new Promise((resolve) => io.close(() => resolve()));
+    await disconnectDB();
+    process.exit(0);
+  } catch (error) {
+    console.error("Error during shutdown:", error.message);
+    process.exit(1);
+  }
+};
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled Promise Rejection:", reason);
+});
+
+startServer();

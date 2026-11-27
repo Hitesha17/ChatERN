@@ -1,18 +1,19 @@
 FROM node:20-alpine
 
 WORKDIR /app
+ENV NODE_ENV=production
 
-# Copy package manifests first for optimal Docker layer caching
 COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
 
-# Install production dependencies
-RUN npm install --omit=dev
-
-# Copy the rest of the application code
 COPY . .
 
-# Expose the default backend port (configured in .env as 5001)
+RUN chown -R node:node /app
+USER node
+
 EXPOSE 5001
 
-# Start the application
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 5001) + '/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+
 CMD ["npm", "start"]
